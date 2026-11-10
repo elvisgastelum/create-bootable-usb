@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: create-bootable-usb
+
+builds:
+  - id: create-bootable-usb
+    main: .
+    binary: create-bootable-usb
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # No version in the name, so .../releases/latest/download/<name> links stay valid.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+      - "^chore"
+
+release:
+  header: |
+    ## Download
+
+    No Go compiler needed: download the file for your computer, unpack it and run `create-bootable-usb`.
+
+    | Computer | File |
+    |----------|------|
+    | macOS, Apple Silicon (ARM) | `create-bootable-usb_macos_arm64.tar.gz` |
+    | macOS, Intel (x86_64) | `create-bootable-usb_macos_x86_64.tar.gz` |
+    | Linux, x86_64 | `create-bootable-usb_linux_x86_64.tar.gz` |
+    | Linux, ARM64 | `create-bootable-usb_linux_arm64.tar.gz` |
+    | Windows, x86_64 | `create-bootable-usb_windows_x86_64.zip` |
+
+    ```sh
+    curl -fsSL https://github.com/elvisgastelum/create-bootable-usb/releases/download/{{ .Tag }}/create-bootable-usb_macos_arm64.tar.gz | tar -xz
+    ./create-bootable-usb
+    ```
+
+    See the [README](https://github.com/elvisgastelum/create-bootable-usb#readme) for usage and platform notes.
