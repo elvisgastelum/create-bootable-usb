@@ -25,3 +25,29 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Points Formula/create-bootable-usb.rb on main at the archives just
+  # published, after installing it with brew. Pre-releases are skipped.
+  homebrew-formula:
+    needs: goreleaser
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Download the published checksums
+        run: gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt --dir "$RUNNER_TEMP"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Update the formula
+        run: .github/scripts/update-homebrew-formula.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/checksums.txt"
+      - name: Install it with brew
+        run: .github/scripts/test-homebrew-formula.sh
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+      - name: Push it to main
+        run: git push origin HEAD:main
