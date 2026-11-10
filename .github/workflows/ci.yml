@@ -29,6 +29,9 @@ jobs:
       - name: Race detector
         if: runner.os != 'Windows'
         run: go test -race ./...
+      - name: Homebrew formula update script
+        if: runner.os != 'Windows'
+        run: .github/scripts/update-homebrew-formula.test.sh
       - name: Raw device write on a RAM disk
         if: runner.os == 'macOS'
         run: go test -tags integration -count=1 -v ./internal/burn/

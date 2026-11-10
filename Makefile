@@ -53,9 +53,12 @@ cross: ## Build the binaries for every release platform into dist/
 snapshot: ## Build the release archives locally with GoReleaser (nothing is uploaded)
 	goreleaser release --snapshot --clean
 
-formula: ## Regenerate Formula/ from a checksums.txt, e.g. make formula V=0.0.2 (CHECKSUMS=dist/checksums.txt)
-	@test -n "$(V)" || { echo "usage: make formula V=0.0.2 [CHECKSUMS=dist/checksums.txt]"; exit 1; }
-	go run ./tools/brewformula -version $(V) -checksums $(or $(CHECKSUMS),$(DIST)/checksums.txt) -o Formula/$(BINARY).rb
+formula: ## Point Formula/ at a published release, e.g. make formula V=0.0.2 (downloads its checksums.txt)
+	@test -n "$(V)" || { echo "usage: make formula V=0.0.2"; exit 1; }
+	@tmp=$$(mktemp -d); \
+	curl -fsSL https://github.com/elvisgastelum/$(BINARY)/releases/download/v$(patsubst v%,%,$(V))/checksums.txt -o $$tmp/checksums.txt \
+	    && go run ./tools/brewformula -version $(V) -checksums $$tmp/checksums.txt -o Formula/$(BINARY).rb; \
+	status=$$?; rm -rf $$tmp; exit $$status
 
 release: ## Tag and push a version, e.g. make release V=v0.0.2; GitHub Actions publishes it
 	@test -n "$(V)" || { echo "usage: make release V=v0.0.2"; exit 1; }

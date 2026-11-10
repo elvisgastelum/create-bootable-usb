@@ -32,6 +32,9 @@ jobs:
     needs: goreleaser
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: macos-latest
+    concurrency:
+      group: homebrew-formula
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,4 +53,10 @@ jobs:
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
       - name: Push it to main
-        run: git push origin HEAD:main
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "Nothing to push."
+            exit 0
+          fi
+          git pull --rebase origin main
+          git push origin HEAD:main

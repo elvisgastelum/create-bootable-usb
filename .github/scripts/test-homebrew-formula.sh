@@ -8,7 +8,7 @@ tap=elvisgastelum/create-bootable-usb
 formula=$tap/create-bootable-usb
 export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1
 
-if brew tap | grep -qx "$tap"; then
+if brew tap | grep -x "$tap" >/dev/null; then
 	echo "$tap is already tapped here; untap it first." >&2
 	exit 1
 fi

@@ -145,7 +145,7 @@ Or install it directly with `go install github.com/elvisgastelum/create-bootable
 | `make vet` | Vet the code for every release platform |
 | `make cross` | Build all five release binaries into `dist/` |
 | `make snapshot` | Build the release archives locally with GoReleaser |
-| `make formula V=0.0.2` | Regenerate `Formula/create-bootable-usb.rb` from `dist/checksums.txt` (the release workflow does this on every release) |
+| `make formula V=0.0.2` | Point `Formula/create-bootable-usb.rb` at a published release, using its `checksums.txt` (the release workflow does this on every release) |
 | `make release V=v0.0.2` | Tag and push a version; GitHub Actions builds and publishes it, then commits the updated Homebrew formula to `main` (run `git pull` afterwards) |
 | `make clean` | Remove `bin/` and `dist/` |
 
