@@ -36,7 +36,7 @@ Not available:
    macOS and Linux (change the file name to match your computer):
 
    ```sh
-   curl -fsSL https://github.com/elvisgastelum/create-bootable-usb/releases/latest/download/create-bootable-usb_macos_arm64.tar.gz | tar -xz
+   curl -fsSL https://github.com/elvisgastelum/create-bootable-usb/releases/latest/download/create-bootable-usb_macos_arm64.tar.gz | tar -xzf - create-bootable-usb
    ./create-bootable-usb
    ```
 
@@ -62,7 +62,7 @@ Passing the image skips the first screen. Choose the stick (for example `/dev/di
 | Image | Lists the `.iso` and `.img` files in your Downloads and Desktop folders and the current folder, newest first. You can also type, paste or drag in a path. |
 | Device | Lists removable and external disks every 3 seconds, so a stick plugged in later appears on its own. Devices it will not write are shown with the reason. |
 | Confirm | Shows the image, the device, its volumes and what will be unmounted. Nothing happens until you type `yes`. Press `tab` to turn verification off or on. |
-| Write | Checks the device again, unmounts it, writes in 4 MiB chunks, flushes, reads everything back and compares it, then ejects (macOS). Shows speed and time left. |
+| Write | Checks the device again, unmounts it, writes in 4 MiB chunks (the partition table last, so no OS mounts a half-written stick), flushes, reads everything back and compares it, then ejects (macOS). Shows speed and time left. |
 | Done | Prints the image's SHA-256 so you can compare it with the checksum on the download page. |
 
 ## Safety rules
@@ -70,7 +70,7 @@ Passing the image skips the first screen. Choose the stick (for example `/dev/di
 The program refuses to write when:
 
 - the disk holds the running operating system (the boot disk, or a live USB you booted from);
-- the disk is internal or not removable: internal SSDs never appear, and external Thunderbolt/NVMe drives are listed as unavailable;
+- the disk is internal or not removable: internal SSDs and eMMC storage never appear, and external Thunderbolt/NVMe drives are never offered (macOS lists them as unavailable);
 - the image does not fit on the device;
 - the image file is stored on the device you are about to erase;
 - the device was unplugged, replaced or renumbered between selecting it and writing. It is checked again right before writing.
@@ -81,11 +81,11 @@ Cancelling a write takes two presses of `ctrl+c`. A cancelled stick will not boo
 
 ```text
 create-bootable-usb [image]          start the interactive writer
-create-bootable-usb --list [image]   list detected devices and exit (no admin rights needed)
+create-bootable-usb --list [image]   list detected devices and exit
 create-bootable-usb --version        print the version and exit
 ```
 
-`--list` with an image path also tells you whether each device is big enough:
+`--list` needs no admin rights on macOS and Linux. With an image path it also tells you whether each device is big enough:
 
 ```text
 DEVICE       DESCRIPTION                                                  MOUNTED                  STATUS
@@ -98,7 +98,7 @@ DEVICE       DESCRIPTION                                                  MOUNTE
 | | macOS | Linux | Windows |
 |---|---|---|---|
 | Finds devices with | `diskutil` | `lsblk` (util-linux 2.27+) | PowerShell `Get-Disk` |
-| Before writing | `diskutil unmountDisk` | `umount` each mounted partition | `diskpart clean` (removes the partitions) |
+| Before writing | `diskutil unmountDisk` (APFS containers too) | `umount` each mounted partition | `diskpart clean` (removes the partitions) |
 | Writes to | `/dev/rdiskN` (raw, fast) | `/dev/sdX`, opened exclusively | `\\.\PhysicalDriveN` |
 | Admin rights | `sudo` | `sudo` | UAC prompt |
 

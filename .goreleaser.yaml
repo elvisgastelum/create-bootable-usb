@@ -60,7 +60,7 @@ release:
     | Windows, x86_64 | `create-bootable-usb_windows_x86_64.zip` |
 
     ```sh
-    curl -fsSL https://github.com/elvisgastelum/create-bootable-usb/releases/download/{{ .Tag }}/create-bootable-usb_macos_arm64.tar.gz | tar -xz
+    curl -fsSL https://github.com/elvisgastelum/create-bootable-usb/releases/download/{{ .Tag }}/create-bootable-usb_macos_arm64.tar.gz | tar -xzf - create-bootable-usb
     ./create-bootable-usb
     ```
 
