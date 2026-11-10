@@ -1,0 +1,15 @@
+# Build output
+/bin/
+/dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Local planning notes
+/odd/
+
+# OS clutter
+.DS_Store
+Thumbs.db
