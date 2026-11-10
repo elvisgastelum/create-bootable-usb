@@ -143,6 +143,22 @@ func New(deps Deps, opts Options) Model {
 	return m
 }
 
+// Filter is a Bubble Tea event filter. While a write runs, SIGINT and
+// SIGTERM (which Bubble Tea turns into InterruptMsg and QuitMsg) become a
+// ctrl+c key, so they need the same two presses to stop a write instead of
+// quitting halfway through it.
+func Filter(model tea.Model, msg tea.Msg) tea.Msg {
+	m, ok := model.(Model)
+	if !ok || m.screen != screenWriting {
+		return msg
+	}
+	switch msg.(type) {
+	case tea.QuitMsg, tea.InterruptMsg:
+		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	}
+	return msg
+}
+
 // Init starts the spinner and, when the image is preselected, the scan.
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spinner.Tick}

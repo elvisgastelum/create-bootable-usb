@@ -43,12 +43,12 @@ your password through sudo; on Windows it asks through a UAC prompt.
 Flags:
 `
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("create-bootable-usb", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	list := flags.Bool("list", false, "list detected devices and exit (no administrator rights needed)")
+	list := flags.Bool("list", false, "list detected devices and exit")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	elevated := flags.Bool(privilege.ElevatedFlag[2:], false, "internal: set on the relaunched Windows process")
 	flags.Usage = func() {
@@ -76,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: "+format+"\n", a...)
 		if *elevated {
 			fmt.Fprint(stderr, "Press Enter to close this window.")
-			bufio.NewReader(os.Stdin).ReadString('\n')
+			bufio.NewReader(stdin).ReadString('\n')
 		}
 		return 1
 	}
@@ -104,7 +104,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if !privilege.IsElevated() {
 		fmt.Fprintln(stdout, "Writing to USB devices needs administrator rights; asking for them now…")
-		err := privilege.Elevate()
+		// Pass the absolute image path: the elevated process may start in
+		// another folder (Windows) and the user's flags are not needed again.
+		var relaunch []string
+		if image.Path != "" {
+			relaunch = []string{image.Path}
+		}
+		err := privilege.Elevate(relaunch)
 		if errors.Is(err, privilege.ErrRelaunched) {
 			fmt.Fprintln(stdout, "Continuing in a new Administrator window.")
 			return 0
@@ -123,7 +129,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return burn.Run(ctx, host, job, report)
 		},
 	}, tui.Options{Image: image.Path})
-	if _, err := tea.NewProgram(model).Run(); err != nil {
+	if _, err := tea.NewProgram(model, tea.WithFilter(tui.Filter)).Run(); err != nil {
 		return fail("%v", err)
 	}
 	return 0

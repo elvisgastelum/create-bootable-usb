@@ -290,3 +290,18 @@ func TestCancellingAWriteNeedsTwoCtrlC(t *testing.T) {
 		t.Fatalf("screen = %v cancelled = %v, want a cancelled result:\n%s", m.screen, m.cancelled, m.View())
 	}
 }
+
+func TestSignalsDuringAWriteBecomeACancelRequest(t *testing.T) {
+	m := newModel(t, []device.Device{stick}, &fakeBurn{})
+	m.screen = screenWriting
+	for _, sig := range []tea.Msg{tea.QuitMsg{}, tea.InterruptMsg{}} {
+		got, ok := Filter(m, sig).(tea.KeyMsg)
+		if !ok || got.Type != tea.KeyCtrlC {
+			t.Fatalf("Filter(%T) during a write = %#v, want a ctrl+c key (two are needed to cancel)", sig, got)
+		}
+	}
+	m.screen = screenDevice
+	if _, ok := Filter(m, tea.QuitMsg{}).(tea.QuitMsg); !ok {
+		t.Fatal("outside a write, quitting must still work")
+	}
+}

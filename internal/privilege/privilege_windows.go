@@ -13,9 +13,9 @@ import (
 // (Administrator) token.
 func IsElevated() bool { return windows.GetCurrentProcessToken().IsElevated() }
 
-// Elevate starts the program again through the UAC "runas" prompt in a new
-// console window and returns ErrRelaunched on success.
-func Elevate() error {
+// Elevate starts the program again with args through the UAC "runas"
+// prompt in a new console window and returns ErrRelaunched on success.
+func Elevate(args []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -24,13 +24,12 @@ func Elevate() error {
 	if err != nil {
 		return err
 	}
-	args := append(append([]string(nil), os.Args[1:]...), ElevatedFlag)
 	verb, _ := windows.UTF16PtrFromString("runas")
 	file, err := windows.UTF16PtrFromString(exe)
 	if err != nil {
 		return err
 	}
-	params, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(args))
+	params, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(RelaunchArgs(args)))
 	if err != nil {
 		return err
 	}
