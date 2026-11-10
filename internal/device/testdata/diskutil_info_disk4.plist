@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BusProtocol</key>
+	<string>PCI-Express</string>
+	<key>Content</key>
+	<string>GUID_partition_scheme</string>
+	<key>DeviceBlockSize</key>
+	<integer>512</integer>
+	<key>DeviceIdentifier</key>
+	<string>disk4</string>
+	<key>DeviceNode</key>
+	<string>/dev/disk4</string>
+	<key>Ejectable</key>
+	<true/>
+	<key>Internal</key>
+	<false/>
+	<key>MediaName</key>
+	<string>KINGSTON SNV3S2000G</string>
+	<key>MountPoint</key>
+	<string></string>
+	<key>OSInternalMedia</key>
+	<false/>
+	<key>ParentWholeDisk</key>
+	<string>disk4</string>
+	<key>Removable</key>
+	<false/>
+	<key>RemovableMedia</key>
+	<false/>
+	<key>RemovableMediaOrExternalDevice</key>
+	<true/>
+	<key>Size</key>
+	<integer>2000398934016</integer>
+	<key>TotalSize</key>
+	<integer>2000398934016</integer>
+	<key>VirtualOrPhysical</key>
+	<string>Physical</string>
+	<key>VolumeName</key>
+	<string></string>
+	<key>WholeDisk</key>
+	<true/>
+</dict>
+</plist>
