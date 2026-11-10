@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -18,16 +19,18 @@ import (
 // fileTarget is a fake raw device backed by a regular file.
 type fileTarget struct {
 	*os.File
-	corruptAt int64 // flip the byte at this offset when written; -1 disables
-	written   int64
+	corruptAt int64 // flip the byte at this device offset whenever it is written; -1 disables
 }
 
 func (f *fileTarget) Write(p []byte) (int, error) {
-	if f.corruptAt >= f.written && f.corruptAt < f.written+int64(len(p)) {
-		p = append([]byte(nil), p...)
-		p[f.corruptAt-f.written] ^= 0xFF
+	offset, err := f.File.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
 	}
-	f.written += int64(len(p))
+	if f.corruptAt >= offset && f.corruptAt < offset+int64(len(p)) {
+		p = append([]byte(nil), p...)
+		p[f.corruptAt-offset] ^= 0xFF
+	}
 	return f.File.Write(p)
 }
 

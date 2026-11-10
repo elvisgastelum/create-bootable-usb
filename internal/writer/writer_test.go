@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"math/rand"
 	"testing"
 )
@@ -17,41 +18,64 @@ func randomImage(t *testing.T, size int) []byte {
 	return img
 }
 
-// recorder is a fake raw device that records the size of every write.
-type recorder struct {
-	bytes.Buffer
-	writes []int
+type writeRecord struct {
+	offset int64
+	data   []byte
 }
 
-func (r *recorder) Write(p []byte) (int, error) {
-	r.writes = append(r.writes, len(p))
-	return r.Buffer.Write(p)
+// fakeDevice is an in-memory raw device that records every write.
+type fakeDevice struct {
+	data   []byte
+	pos    int64
+	writes []writeRecord
+}
+
+func (d *fakeDevice) Write(p []byte) (int, error) {
+	end := d.pos + int64(len(p))
+	if end > int64(len(d.data)) {
+		d.data = append(d.data, make([]byte, end-int64(len(d.data)))...)
+	}
+	copy(d.data[d.pos:], p)
+	d.writes = append(d.writes, writeRecord{offset: d.pos, data: append([]byte(nil), p...)})
+	d.pos = end
+	return len(p), nil
+}
+
+func (d *fakeDevice) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		d.pos = offset
+	case io.SeekCurrent:
+		d.pos += offset
+	default:
+		return 0, errors.New("unsupported whence")
+	}
+	return d.pos, nil
 }
 
 func TestWriteCopiesImageInAlignedChunks(t *testing.T) {
 	img := randomImage(t, 2*ChunkSize+12345) // final chunk is not sector aligned
-	dst := &recorder{}
+	dev := &fakeDevice{}
 	var reported []int64
 
-	sum, err := Write(context.Background(), dst, bytes.NewReader(img), int64(len(img)), 1<<30,
+	sum, err := Write(context.Background(), dev, bytes.NewReader(img), int64(len(img)), 1<<30,
 		func(done int64) { reported = append(reported, done) })
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got := dst.Bytes()
-	if !bytes.Equal(got[:len(img)], img) {
+	if !bytes.Equal(dev.data[:len(img)], img) {
 		t.Fatal("device content differs from the image")
 	}
-	if len(got)%Alignment != 0 {
-		t.Fatalf("wrote %d bytes; raw devices need whole %d-byte sectors", len(got), Alignment)
+	if len(dev.data)%Alignment != 0 {
+		t.Fatalf("wrote %d bytes; raw devices need whole %d-byte sectors", len(dev.data), Alignment)
 	}
-	if tail := got[len(img):]; !bytes.Equal(tail, make([]byte, len(tail))) {
+	if tail := dev.data[len(img):]; !bytes.Equal(tail, make([]byte, len(tail))) {
 		t.Fatal("padding after the image must be zeros")
 	}
-	for _, n := range dst.writes {
-		if n%Alignment != 0 {
-			t.Fatalf("write of %d bytes is not sector aligned (writes: %v)", n, dst.writes)
+	for _, w := range dev.writes {
+		if len(w.data)%Alignment != 0 || w.offset%Alignment != 0 {
+			t.Fatalf("write of %d bytes at %d is not sector aligned", len(w.data), w.offset)
 		}
 	}
 	want := sha256.Sum256(img)
@@ -68,17 +92,51 @@ func TestWriteCopiesImageInAlignedChunks(t *testing.T) {
 	}
 }
 
+// The partition table lives in the first chunk. Blanking it first and
+// writing it last keeps the OS from mounting half-written partitions, and
+// an interrupted write leaves no stale table behind.
+func TestWriteBlanksTheFirstChunkAndWritesItLast(t *testing.T) {
+	img := randomImage(t, 3*ChunkSize)
+	dev := &fakeDevice{data: bytes.Repeat([]byte{0xEE}, 4*ChunkSize)} // old content
+	if _, err := Write(context.Background(), dev, bytes.NewReader(img), int64(len(img)), 1<<30, func(int64) {}); err != nil {
+		t.Fatal(err)
+	}
+	first, last := dev.writes[0], dev.writes[len(dev.writes)-1]
+	if first.offset != 0 || !bytes.Equal(first.data, make([]byte, ChunkSize)) {
+		t.Fatalf("first write must blank chunk 0, got %d bytes at %d", len(first.data), first.offset)
+	}
+	if last.offset != 0 || !bytes.Equal(last.data, img[:ChunkSize]) {
+		t.Fatalf("last write must be the image's first chunk at offset 0, got %d bytes at %d", len(last.data), last.offset)
+	}
+}
+
+func TestWriteSingleChunkImage(t *testing.T) {
+	img := randomImage(t, 10_000)
+	dev := &fakeDevice{}
+	var reported []int64
+	if _, err := Write(context.Background(), dev, bytes.NewReader(img), int64(len(img)), 1<<30,
+		func(done int64) { reported = append(reported, done) }); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(dev.data[:len(img)], img) {
+		t.Fatal("device content differs from the image")
+	}
+	if len(reported) != 1 || reported[0] != int64(len(img)) {
+		t.Fatalf("progress = %v, want one report of %d", reported, len(img))
+	}
+}
+
 func TestWritePaddingStopsAtDeviceEnd(t *testing.T) {
 	img := randomImage(t, 10_000)
 	deviceSize := int64(10_100) // smaller than the image rounded up to 4096
-	dst := &recorder{}
-	if _, err := Write(context.Background(), dst, bytes.NewReader(img), int64(len(img)), deviceSize, func(int64) {}); err != nil {
+	dev := &fakeDevice{}
+	if _, err := Write(context.Background(), dev, bytes.NewReader(img), int64(len(img)), deviceSize, func(int64) {}); err != nil {
 		t.Fatal(err)
 	}
-	if int64(dst.Len()) > deviceSize {
-		t.Fatalf("wrote %d bytes past a %d-byte device", dst.Len(), deviceSize)
+	if int64(len(dev.data)) > deviceSize {
+		t.Fatalf("wrote %d bytes past a %d-byte device", len(dev.data), deviceSize)
 	}
-	if !bytes.Equal(dst.Bytes()[:len(img)], img) {
+	if !bytes.Equal(dev.data[:len(img)], img) {
 		t.Fatal("device content differs from the image")
 	}
 }
@@ -86,19 +144,22 @@ func TestWritePaddingStopsAtDeviceEnd(t *testing.T) {
 func TestWriteStopsWhenCancelled(t *testing.T) {
 	img := randomImage(t, 4*ChunkSize)
 	ctx, cancel := context.WithCancel(context.Background())
-	dst := &recorder{}
-	_, err := Write(ctx, dst, bytes.NewReader(img), int64(len(img)), 1<<30, func(int64) { cancel() })
+	dev := &fakeDevice{data: bytes.Repeat([]byte{0xEE}, 4*ChunkSize)}
+	_, err := Write(ctx, dev, bytes.NewReader(img), int64(len(img)), 1<<30, func(int64) { cancel() })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	if dst.Len() >= len(img) {
-		t.Fatal("writing must stop after cancellation")
+	if len(dev.writes) >= 5 { // blank chunk 0 + 3 chunks + real chunk 0
+		t.Fatalf("writing must stop after cancellation, got %d writes", len(dev.writes))
+	}
+	if !bytes.Equal(dev.data[:ChunkSize], make([]byte, ChunkSize)) {
+		t.Fatal("a cancelled write must leave the first chunk blank, so no stale partition table remains")
 	}
 }
 
 func TestWriteFailsWhenImageIsShorterThanExpected(t *testing.T) {
 	img := randomImage(t, 1000)
-	if _, err := Write(context.Background(), &recorder{}, bytes.NewReader(img), 5000, 1<<30, func(int64) {}); err == nil {
+	if _, err := Write(context.Background(), &fakeDevice{}, bytes.NewReader(img), 5000, 1<<30, func(int64) {}); err == nil {
 		t.Fatal("want an error when the image ends early")
 	}
 }

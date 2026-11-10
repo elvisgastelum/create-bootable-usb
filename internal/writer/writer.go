@@ -27,13 +27,36 @@ func (e *MismatchError) Error() string {
 	return fmt.Sprintf("the device differs from the image at byte %d; the USB device may be faulty", e.Offset)
 }
 
-// Write copies the first size bytes of src to dst and returns their SHA-256.
-// The final chunk is zero-padded to Alignment, but never past deviceSize.
-// progress receives the number of image bytes written after every chunk.
-func Write(ctx context.Context, dst io.Writer, src io.Reader, size, deviceSize int64, progress func(done int64)) (string, error) {
-	buf := make([]byte, ChunkSize)
+// Write copies the first size bytes of src to dst, which must be positioned
+// at the start of the device, and returns their SHA-256. The final chunk is
+// zero-padded to Alignment, but never past deviceSize. progress receives the
+// number of image bytes written so far.
+//
+// The first chunk holds the partition table. It is blanked first and its
+// real content written last, as balenaEtcher does: until the very end no OS
+// sees a partition table and mounts half-written partitions (Windows does),
+// and an interrupted write leaves no stale table pointing at overwritten data.
+func Write(ctx context.Context, dst io.WriteSeeker, src io.Reader, size, deviceSize int64, progress func(done int64)) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	hash := sha256.New()
-	var done int64
+	first := make([]byte, ChunkSize)
+	n0 := int(min(int64(ChunkSize), size))
+	if _, err := io.ReadFull(src, first[:n0]); err != nil {
+		return "", fmt.Errorf("read the image at byte 0: %w", err)
+	}
+	hash.Write(first[:n0])
+	p0 := paddedLen(n0, 0, deviceSize)
+	clear(first[n0:p0])
+
+	buf := make([]byte, ChunkSize)
+	clear(buf[:p0])
+	if _, err := dst.Write(buf[:p0]); err != nil {
+		return "", fmt.Errorf("write to the device at byte 0: %w", err)
+	}
+
+	done := int64(n0)
 	for done < size {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -50,8 +73,19 @@ func Write(ctx context.Context, dst io.Writer, src io.Reader, size, deviceSize i
 			return "", fmt.Errorf("write to the device at byte %d: %w", done, err)
 		}
 		done += int64(n)
-		progress(done)
+		progress(done - int64(n0))
 	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if _, err := dst.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("seek to the start of the device: %w", err)
+	}
+	if _, err := dst.Write(first[:p0]); err != nil {
+		return "", fmt.Errorf("write to the device at byte 0: %w", err)
+	}
+	progress(size)
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
