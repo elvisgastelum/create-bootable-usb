@@ -21,6 +21,22 @@ Not available:
 
 ## Quick start
 
+### With Homebrew (macOS and Linux)
+
+This repository is also a Homebrew tap:
+
+```sh
+brew tap elvisgastelum/create-bootable-usb https://github.com/elvisgastelum/create-bootable-usb
+brew install elvisgastelum/create-bootable-usb/create-bootable-usb
+create-bootable-usb
+```
+
+Install it by its full name the first time: Homebrew only loads formulae from a third-party tap you have trusted, and naming the tap in `brew install` trusts it (a plain `brew install create-bootable-usb` stops with "Refusing to load formula … from untrusted tap"). After that the short name works.
+
+The formula installs the same release binaries as the downloads below (Apple Silicon, Intel, Linux x86_64 and ARM64) and is updated on every release. Update with `brew upgrade create-bootable-usb`. Remove it with `brew uninstall create-bootable-usb && brew untap elvisgastelum/create-bootable-usb`.
+
+### Without Homebrew
+
 1. **Download** the file for your computer from the [latest release](https://github.com/elvisgastelum/create-bootable-usb/releases/latest). You do not need Go installed.
 
    | Computer | File |
@@ -129,6 +145,7 @@ Or install it directly with `go install github.com/elvisgastelum/create-bootable
 | `make vet` | Vet the code for every release platform |
 | `make cross` | Build all five release binaries into `dist/` |
 | `make snapshot` | Build the release archives locally with GoReleaser |
+| `make formula V=0.0.2` | Regenerate `Formula/create-bootable-usb.rb` from `dist/checksums.txt` (the release workflow does this on every release) |
 | `make release V=v0.0.2` | Tag and push a version; GitHub Actions builds and publishes it |
 | `make clean` | Remove `bin/` and `dist/` |
 
@@ -143,6 +160,8 @@ Or install it directly with `go install github.com/elvisgastelum/create-bootable
 | `internal/writer` | Sector-aligned copy and byte-for-byte verification |
 | `internal/images` | Finding and inspecting `.iso`/`.img` files |
 | `internal/privilege` | `sudo` / UAC elevation |
+| `Formula/` | The Homebrew formula (this repository is a tap) |
+| `tools/brewformula` | Generates the formula from a release's `checksums.txt` |
 
 ## Doing it by hand with `dd`
 

@@ -8,7 +8,7 @@ DIST    := dist
 TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
 .DEFAULT_GOAL := help
-.PHONY: help build run list test test-race test-integration vet fmt cross snapshot release clean
+.PHONY: help build run list test test-race test-integration vet fmt cross snapshot formula release clean
 
 help: ## Show the available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -52,6 +52,10 @@ cross: ## Build the binaries for every release platform into dist/
 
 snapshot: ## Build the release archives locally with GoReleaser (nothing is uploaded)
 	goreleaser release --snapshot --clean
+
+formula: ## Regenerate Formula/ from a checksums.txt, e.g. make formula V=0.0.2 (CHECKSUMS=dist/checksums.txt)
+	@test -n "$(V)" || { echo "usage: make formula V=0.0.2 [CHECKSUMS=dist/checksums.txt]"; exit 1; }
+	go run ./tools/brewformula -version $(V) -checksums $(or $(CHECKSUMS),$(DIST)/checksums.txt) -o Formula/$(BINARY).rb
 
 release: ## Tag and push a version, e.g. make release V=v0.0.2; GitHub Actions publishes it
 	@test -n "$(V)" || { echo "usage: make release V=v0.0.2"; exit 1; }
