@@ -34,9 +34,11 @@ var systemMounts = map[string]bool{
 }
 
 // parseLsblk turns `lsblk -J -b -o <lsblkColumns>` output into devices.
-// Only whole disks that are removable, hot-pluggable, on USB or SD/MMC
-// cards are returned; loop devices and fixed internal disks are dropped.
-func parseLsblk(data []byte) ([]Device, error) {
+// Only whole disks that are removable, hot-pluggable, on USB or SD cards are
+// returned; loop devices, fixed internal disks and soldered eMMC storage are
+// dropped. mmcType reports the kernel's card type for an mmcblk device
+// ("SD" or "MMC", from /sys/block/<name>/device/type).
+func parseLsblk(data []byte, mmcType func(name string) string) ([]Device, error) {
 	var out struct {
 		Blockdevices []lsblkDev `json:"blockdevices"`
 	}
@@ -50,7 +52,15 @@ func parseLsblk(data []byte) ([]Device, error) {
 			continue
 		}
 		tran := strings.ToLower(strings.TrimSpace(b.Tran))
-		sdCard := strings.HasPrefix(b.Name, "mmcblk")
+		sdCard := false
+		if strings.HasPrefix(b.Name, "mmcblk") {
+			// mmcblkNbootM and mmcblkNrpmb are eMMC hardware partitions;
+			// anything that is not an SD card is soldered-on eMMC storage.
+			if strings.Contains(b.Name, "boot") || strings.Contains(b.Name, "rpmb") || mmcType(b.Name) != "SD" {
+				continue
+			}
+			sdCard = true
+		}
 		if !bool(b.RM) && !bool(b.Hotplug) && tran != "usb" && !sdCard {
 			continue
 		}

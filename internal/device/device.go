@@ -24,6 +24,9 @@ type Device struct {
 	System    bool     // holds the running operating system; never writable
 	Labels    []string // volume labels of its partitions, e.g. "USB"
 	Mounts    []string // mount points or drive letters currently in use
+	// Containers are macOS APFS container disks backed by this disk; their
+	// volumes are unmounted before writing.
+	Containers []string
 }
 
 // Problem explains why d must not be offered as a target for an image of

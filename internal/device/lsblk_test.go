@@ -25,7 +25,9 @@ const lsblkNew = `{
             {"name":"sdc1", "size":64022208512, "model":null, "vendor":null, "tran":"usb", "rm":true, "hotplug":true, "type":"part", "mountpoint":"/run/live/medium", "label":"LIVE"}
          ]
       },
-      {"name":"mmcblk0", "size":31914983424, "model":null, "vendor":null, "tran":null, "rm":false, "hotplug":false, "type":"disk", "mountpoint":null, "label":null}
+      {"name":"mmcblk0", "size":31914983424, "model":null, "vendor":null, "tran":null, "rm":false, "hotplug":false, "type":"disk", "mountpoint":null, "label":null},
+      {"name":"mmcblk1", "size":62537072640, "model":null, "vendor":null, "tran":null, "rm":false, "hotplug":false, "type":"disk", "mountpoint":null, "label":null},
+      {"name":"mmcblk1boot0", "size":4194304, "model":null, "vendor":null, "tran":null, "rm":false, "hotplug":false, "type":"disk", "mountpoint":null, "label":null}
    ]
 }`
 
@@ -41,8 +43,14 @@ const lsblkOld = `{
    ]
 }`
 
+// fakeMMCType answers like /sys/block/<name>/device/type: mmcblk0 is an SD
+// card, mmcblk1 is soldered-on eMMC storage.
+func fakeMMCType(name string) string {
+	return map[string]string{"mmcblk0": "SD", "mmcblk1": "MMC"}[name]
+}
+
 func TestParseLsblkNewFormat(t *testing.T) {
-	devices, err := parseLsblk([]byte(lsblkNew))
+	devices, err := parseLsblk([]byte(lsblkNew), fakeMMCType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,9 +58,9 @@ func TestParseLsblkNewFormat(t *testing.T) {
 	for _, d := range devices {
 		byID[d.ID] = d
 	}
-	for _, hidden := range []string{"loop0", "nvme0n1"} {
+	for _, hidden := range []string{"loop0", "nvme0n1", "mmcblk1", "mmcblk1boot0"} {
 		if _, ok := byID[hidden]; ok {
-			t.Errorf("%s is not removable and must not be listed", hidden)
+			t.Errorf("%s is internal storage and must not be listed", hidden)
 		}
 	}
 
@@ -80,7 +88,7 @@ func TestParseLsblkNewFormat(t *testing.T) {
 }
 
 func TestParseLsblkOldFormat(t *testing.T) {
-	devices, err := parseLsblk([]byte(lsblkOld))
+	devices, err := parseLsblk([]byte(lsblkOld), fakeMMCType)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +105,7 @@ func TestParseLsblkOldFormat(t *testing.T) {
 }
 
 func TestParseLsblkRejectsGarbage(t *testing.T) {
-	if _, err := parseLsblk([]byte("lsblk: unknown column")); err == nil {
+	if _, err := parseLsblk([]byte("lsblk: unknown column"), fakeMMCType); err == nil {
 		t.Fatal("want an error for non-JSON output")
 	}
 }

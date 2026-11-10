@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -17,7 +18,16 @@ func list() ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseLsblk(out)
+	return parseLsblk(out, sysfsMMCType)
+}
+
+// sysfsMMCType reads the card type ("SD", "MMC", "SDIO") of an mmcblk device.
+func sysfsMMCType(name string) string {
+	data, err := os.ReadFile("/sys/block/" + name + "/device/type")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func prepare(d Device) error {

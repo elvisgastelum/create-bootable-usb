@@ -18,6 +18,12 @@ func list() ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
+	// APFS volumes live on synthesized container disks that the physical
+	// listing leaves out; the full listing maps them to their physical disk.
+	allOut, err := run("diskutil", "list", "-plist")
+	if err != nil {
+		return nil, err
+	}
 	infos := make(map[string][]byte, len(whole))
 	for _, id := range whole {
 		out, err := run("diskutil", "info", "-plist", id)
@@ -32,10 +38,15 @@ func list() ([]Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("locate the boot disk: %w", err)
 	}
-	return parseDarwinDevices(listOut, infos, root)
+	return parseDarwinDevices(listOut, allOut, infos, root)
 }
 
 func prepare(d Device) error {
+	for _, c := range d.Containers {
+		if _, err := run("diskutil", "unmountDisk", "force", "/dev/"+c); err != nil {
+			return fmt.Errorf("unmount the APFS volumes of %s: %w", d.Path, err)
+		}
+	}
 	if _, err := run("diskutil", "unmountDisk", "force", d.Path); err != nil {
 		return fmt.Errorf("unmount %s: %w", d.Path, err)
 	}

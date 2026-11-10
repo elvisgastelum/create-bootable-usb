@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -16,9 +17,9 @@ func readFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-func darwinFixtures(t *testing.T) (list []byte, infos map[string][]byte) {
+func darwinFixtures(t *testing.T) (list, all []byte, infos map[string][]byte) {
 	t.Helper()
-	return readFixture(t, "diskutil_list_physical.plist"), map[string][]byte{
+	return readFixture(t, "diskutil_list_physical.plist"), readFixture(t, "diskutil_list_all.plist"), map[string][]byte{
 		"disk0": readFixture(t, "diskutil_info_disk0.plist"),
 		"disk4": readFixture(t, "diskutil_info_disk4.plist"),
 		"disk6": readFixture(t, "diskutil_info_disk6.plist"),
@@ -26,8 +27,8 @@ func darwinFixtures(t *testing.T) (list []byte, infos map[string][]byte) {
 }
 
 func TestParseDarwinDevices(t *testing.T) {
-	list, infos := darwinFixtures(t)
-	devices, err := parseDarwinDevices(list, infos, readFixture(t, "diskutil_info_root.plist"))
+	list, all, infos := darwinFixtures(t)
+	devices, err := parseDarwinDevices(list, all, infos, readFixture(t, "diskutil_info_root.plist"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestParseDarwinDevices(t *testing.T) {
 }
 
 func TestParseDarwinDevicesMarksBootDisk(t *testing.T) {
-	list, infos := darwinFixtures(t)
+	list, all, infos := darwinFixtures(t)
 	// A Mac booted from the external stick: the APFS container holding "/"
 	// lives on disk6s2.
 	root := []byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -80,7 +81,7 @@ func TestParseDarwinDevicesMarksBootDisk(t *testing.T) {
 <key>ParentWholeDisk</key><string>disk3</string>
 <key>APFSPhysicalStores</key><array><dict><key>APFSPhysicalStore</key><string>disk6s2</string></dict></array>
 </dict></plist>`)
-	devices, err := parseDarwinDevices(list, infos, root)
+	devices, err := parseDarwinDevices(list, all, infos, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +92,79 @@ func TestParseDarwinDevicesMarksBootDisk(t *testing.T) {
 		if d.ID == "disk4" && d.System {
 			t.Fatal("disk4 does not hold the boot volume")
 		}
+	}
+}
+
+// An APFS-formatted USB SSD: its volumes live on the synthesized container
+// disk9, which `diskutil list -plist physical` leaves out.
+const (
+	apfsPhysicalList = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>WholeDisks</key><array><string>disk8</string></array>
+<key>AllDisksAndPartitions</key><array><dict>
+  <key>DeviceIdentifier</key><string>disk8</string>
+  <key>Size</key><integer>500107862016</integer>
+  <key>Partitions</key><array>
+    <dict><key>DeviceIdentifier</key><string>disk8s1</string><key>Content</key><string>EFI</string><key>VolumeName</key><string>EFI</string></dict>
+    <dict><key>DeviceIdentifier</key><string>disk8s2</string><key>Content</key><string>Apple_APFS</string></dict>
+  </array>
+</dict></array></dict></plist>`
+	apfsAllList = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>WholeDisks</key><array><string>disk8</string><string>disk9</string></array>
+<key>AllDisksAndPartitions</key><array>
+  <dict><key>DeviceIdentifier</key><string>disk8</string><key>Size</key><integer>500107862016</integer></dict>
+  <dict>
+    <key>DeviceIdentifier</key><string>disk9</string>
+    <key>APFSPhysicalStores</key><array><dict><key>DeviceIdentifier</key><string>disk8s2</string></dict></array>
+    <key>APFSVolumes</key><array>
+      <dict><key>DeviceIdentifier</key><string>disk9s1</string><key>VolumeName</key><string>Backup</string><key>MountPoint</key><string>MOUNT</string></dict>
+      <dict><key>DeviceIdentifier</key><string>disk9s2</string><key>VolumeName</key><string>Preboot</string></dict>
+    </array>
+  </dict>
+</array></dict></plist>`
+	apfsInfo = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>DeviceIdentifier</key><string>disk8</string>
+<key>MediaName</key><string>Samsung PSSD T7</string>
+<key>TotalSize</key><integer>500107862016</integer>
+<key>BusProtocol</key><string>USB</string>
+<key>RemovableMedia</key><false/>
+<key>Internal</key><false/>
+</dict></plist>`
+)
+
+func TestParseDarwinDevicesAttachesAPFSVolumes(t *testing.T) {
+	parse := func(mount string) Device {
+		t.Helper()
+		all := []byte(strings.Replace(apfsAllList, "MOUNT", mount, 1))
+		devices, err := parseDarwinDevices([]byte(apfsPhysicalList), all,
+			map[string][]byte{"disk8": []byte(apfsInfo)}, readFixture(t, "diskutil_info_root.plist"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(devices) != 1 {
+			t.Fatalf("got %+v, want only disk8", devices)
+		}
+		return devices[0]
+	}
+
+	d := parse("/Volumes/Backup")
+	if !reflect.DeepEqual(d.Labels, []string{"Backup"}) {
+		t.Errorf("labels = %v, want [Backup] from the APFS container (EFI and Preboot hidden)", d.Labels)
+	}
+	if !reflect.DeepEqual(d.Mounts, []string{"/Volumes/Backup"}) {
+		t.Errorf("mounts = %v, want the APFS volume mount point", d.Mounts)
+	}
+	if !reflect.DeepEqual(d.Containers, []string{"disk9"}) {
+		t.Errorf("containers = %v, want [disk9] so it is unmounted before writing", d.Containers)
+	}
+	if d.System || d.Problem(1_706_178_560) != "" {
+		t.Errorf("an APFS USB SSD must be a valid target, got system=%v problem=%q", d.System, d.Problem(1_706_178_560))
+	}
+
+	if !parse("/").System {
+		t.Error("a disk whose APFS volume is mounted at / must be marked as a system disk")
 	}
 }
 

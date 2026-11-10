@@ -9,7 +9,7 @@ import (
 	"howett.net/plist"
 )
 
-// diskutilList is the subset of `diskutil list -plist physical` we use.
+// diskutilList is the subset of `diskutil list -plist [physical]` we use.
 type diskutilList struct {
 	WholeDisks            []string `plist:"WholeDisks"`
 	AllDisksAndPartitions []struct {
@@ -23,7 +23,25 @@ type diskutilList struct {
 			VolumeName       string `plist:"VolumeName"`
 			MountPoint       string `plist:"MountPoint"`
 		} `plist:"Partitions"`
+		// Set on synthesized APFS container disks (unfiltered listing only).
+		APFSPhysicalStores []struct {
+			DeviceIdentifier string `plist:"DeviceIdentifier"`
+		} `plist:"APFSPhysicalStores"`
+		APFSVolumes []struct {
+			VolumeName string `plist:"VolumeName"`
+			MountPoint string `plist:"MountPoint"`
+		} `plist:"APFSVolumes"`
 	} `plist:"AllDisksAndPartitions"`
+}
+
+// apfsRoleVolumes are system-managed APFS volumes not worth showing as labels.
+var apfsRoleVolumes = map[string]bool{"Preboot": true, "Recovery": true, "VM": true, "Update": true}
+
+// apfsContainer is a synthesized APFS disk and the volumes it holds.
+type apfsContainer struct {
+	id     string
+	labels []string
+	mounts []string
 }
 
 // diskutilInfo is the subset of `diskutil info -plist <disk>` we use.
@@ -57,13 +75,39 @@ func parseDarwinWholeDisks(list []byte) ([]string, error) {
 }
 
 // parseDarwinDevices builds devices from `diskutil list -plist physical`,
-// `diskutil info -plist <disk>` for each whole disk (keyed by identifier) and
-// `diskutil info -plist /`, which locates the boot disk. Internal fixed
-// disks are dropped; internal removable media (built-in SD slots) are kept.
-func parseDarwinDevices(list []byte, infos map[string][]byte, root []byte) ([]Device, error) {
+// the unfiltered `diskutil list -plist` (which also holds the APFS
+// containers whose volumes live on a physical disk), `diskutil info -plist
+// <disk>` for each whole disk (keyed by identifier) and `diskutil info
+// -plist /`, which locates the boot disk. Internal fixed disks are dropped;
+// internal removable media (built-in SD slots) are kept.
+func parseDarwinDevices(list, all []byte, infos map[string][]byte, root []byte) ([]Device, error) {
 	var l diskutilList
 	if err := decodePlist(list, &l); err != nil {
 		return nil, fmt.Errorf("parse diskutil list: %w", err)
+	}
+	var everything diskutilList
+	if err := decodePlist(all, &everything); err != nil {
+		return nil, fmt.Errorf("parse diskutil list: %w", err)
+	}
+	containers := map[string][]apfsContainer{} // physical whole disk -> containers it backs
+	for _, e := range everything.AllDisksAndPartitions {
+		if len(e.APFSPhysicalStores) == 0 {
+			continue
+		}
+		c := apfsContainer{id: e.DeviceIdentifier}
+		for _, v := range e.APFSVolumes {
+			if v.VolumeName != "" && !apfsRoleVolumes[v.VolumeName] {
+				c.labels = append(c.labels, v.VolumeName)
+			}
+			if v.MountPoint != "" {
+				c.mounts = append(c.mounts, v.MountPoint)
+			}
+		}
+		for _, store := range e.APFSPhysicalStores {
+			if disk := wholeDisk(store.DeviceIdentifier); disk != "" {
+				containers[disk] = append(containers[disk], c)
+			}
+		}
 	}
 	var rootInfo diskutilInfo
 	if err := decodePlist(root, &rootInfo); err != nil {
@@ -119,6 +163,16 @@ func parseDarwinDevices(list []byte, infos map[string][]byte, root []byte) ([]De
 			}
 			if p.MountPoint != "" {
 				d.Mounts = append(d.Mounts, p.MountPoint)
+			}
+		}
+		for _, c := range containers[id] {
+			d.Containers = append(d.Containers, c.id)
+			d.Labels = append(d.Labels, c.labels...)
+			d.Mounts = append(d.Mounts, c.mounts...)
+			for _, m := range c.mounts {
+				if m == "/" {
+					d.System = true
+				}
 			}
 		}
 		devices = append(devices, d)
